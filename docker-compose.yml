@@ -1,0 +1,18 @@
+services:
+  oura-ring-mcp:
+    build:
+      context: .
+    image: oura-ring-mcp:latest
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      BASE_URL: ${BASE_URL}
+      CLIENT_ID: ${CLIENT_ID}
+      CLIENT_SECRET: ${CLIENT_SECRET}
+      REDIRECT_URI: ${REDIRECT_URI}
+      MCP_CLIENT_ID: ${MCP_CLIENT_ID}
+      MCP_CLIENT_SECRET: ${MCP_CLIENT_SECRET}
+      MCP_REDIRECT_URI: ${MCP_REDIRECT_URI:-https://claude.ai/api/mcp/auth_callback}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}

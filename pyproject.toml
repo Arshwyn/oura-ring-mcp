@@ -1,0 +1,11 @@
+[project]
+name = "oura-mcp"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp",
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "supabase"
+]
