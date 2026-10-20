@@ -85,6 +85,35 @@ def load_tokens():
         print(f"Error loading tokens from Supabase: {e}")
         return None
 
+LOG_FIELD_CAP = 200
+
+def cap_text(value, limit=LOG_FIELD_CAP):
+    text = str(value)
+    return text if len(text) <= limit else text[:limit] + "..."
+
+class TokenRefreshError(Exception):
+    """Refresh failure carrying only a sanitized summary (never the raw body)."""
+
+    def __init__(self, status_code, summary):
+        self.status_code = status_code
+        self.summary = summary
+        super().__init__(f"Refresh failed ({status_code}): {summary}")
+
+def summarize_token_error(resp):
+    """Build a log-safe summary of an Oura token error response."""
+    try:
+        body = resp.json()
+    except Exception:
+        body = None
+    if not isinstance(body, dict):
+        return f"body not parseable ({len(resp.text)} chars)"
+    parts = []
+    for field in ("error", "error_description"):
+        value = body.get(field)
+        if isinstance(value, str):
+            parts.append(f"{field}={cap_text(value)!r}")
+    return ", ".join(parts) if parts else "no error fields in body"
+
 async def refresh_access_token(refresh_token):
     async with httpx.AsyncClient() as client:
         payload = {
@@ -95,7 +124,7 @@ async def refresh_access_token(refresh_token):
         }
         resp = await client.post(OURA_TOKEN_URL, data=payload)
         if resp.status_code != 200:
-            raise Exception(f"Refresh failed ({resp.status_code}): {resp.text}")
+            raise TokenRefreshError(resp.status_code, summarize_token_error(resp))
 
         new_tokens = resp.json()
 
