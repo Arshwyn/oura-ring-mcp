@@ -159,11 +159,17 @@ async def make_oura_request(endpoint: str, params: dict = None):
                 print("Token expired, refreshing...")
                 tokens = load_tokens()
                 if tokens and "refresh_token" in tokens:
+                    stage = "refresh"
                     try:
                         new_token = await refresh_access_token(tokens["refresh_token"])
                         headers["Authorization"] = f"Bearer {new_token}"
+                        stage = "retry"
                         resp = await client.get(url, headers=headers, params=params)
                     except Exception as e:
+                        if isinstance(e, TokenRefreshError):
+                            print(f"Token {stage} failed: {type(e).__name__}, status {e.status_code}, {e.summary}")
+                        else:
+                            print(f"Token {stage} failed: {type(e).__name__}: {cap_text(e)}")
                         return {"error": f"Your Oura connection has expired. Please visit /auth/login to reconnect."}
                 else:
                     return {"error": "No refresh token available. Please visit /auth/login to authenticate again."}
