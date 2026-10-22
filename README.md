@@ -43,6 +43,27 @@ create table if not exists auth_store (
 );
 ```
 
+Then enable row level security on the table:
+
+```sql
+alter table auth_store enable row level security;
+```
+
+The table holds Oura OAuth tokens, and tables created through SQL are
+reachable through Supabase's API unless row level security is enabled. Do not
+create any policies: with RLS enabled and no policies, only the service-role
+(secret) key used by the server can access the table, and the `anon` and
+`authenticated` roles are denied.
+
+`SUPABASE_KEY` must be the service-role (secret) key. Keep it server-side and
+never use the anon/publishable key or expose it to clients.
+
+How to verify: after running the SQL, the table shows RLS enabled in the
+Supabase dashboard (Table Editor, or Authentication > Policies). The Supabase
+Security Advisor may show an informational "RLS enabled, no policy" notice for
+`auth_store`; this is expected, because the server uses the service-role key
+and no policies are intended.
+
 `mcp_name` must be the primary key (or unique) so the upsert resolves to one
 row. Supabase is the only supported token store; the server will not start
 without `SUPABASE_URL` and `SUPABASE_KEY`.
