@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11.18-slim-trixie
 
 # Install uv for fast package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
