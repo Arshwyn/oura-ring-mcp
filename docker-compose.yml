@@ -2,7 +2,7 @@ services:
   oura-ring-mcp:
     build:
       context: .
-    image: oura-ring-mcp:latest
+    image: oura-ring-mcp:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "${PORT:-8000}:8000"
