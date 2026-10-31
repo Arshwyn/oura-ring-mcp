@@ -9,8 +9,9 @@ WORKDIR /app
 COPY pyproject.toml .
 COPY main.py .
 
-# Install dependencies
-RUN uv pip install --system -r pyproject.toml
+# Install dependencies, then drop the base image's build tooling (not needed at runtime)
+RUN uv pip install --system -r pyproject.toml \
+    && uv pip uninstall --system setuptools wheel
 
 # Run the server
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
