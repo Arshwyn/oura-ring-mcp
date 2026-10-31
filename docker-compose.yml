@@ -4,6 +4,13 @@ services:
       context: .
     image: oura-ring-mcp:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${PORT:-8000}:8000"
     environment:
