@@ -110,6 +110,11 @@ edit of the corresponding line followed by a rebuild.
 The runtime image does not include `setuptools` or `wheel`; they are removed
 after the dependencies are installed.
 
+The container runs as a non-root user (UID 1001) with a read-only root
+filesystem, a `/tmp` tmpfs, all capabilities dropped, `no-new-privileges`, and a
+`/healthz` healthcheck. Any future write path must use `/tmp` or a new, declared
+volume.
+
 ## Connect Claude
 
 In Claude, add a custom connector:
@@ -129,6 +134,8 @@ In Claude, add a custom connector:
 ## Security notes
 
 - Never commit `.env`.
+- The container is hardened: non-root user, read-only root filesystem, no
+  capabilities, and `no-new-privileges`.
 - `MCP_CLIENT_SECRET` is the only access credential for the MCP endpoint.
   Keep it secret and rotate it if exposed.
 - MCP access tokens are held in memory, so after a restart the connector must
