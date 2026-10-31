@@ -84,7 +84,7 @@ Copy `.env.example` to `.env` and fill it in.
 | `SUPABASE_URL` | yes | Supabase project URL. |
 | `SUPABASE_KEY` | yes | Supabase key. A privileged secret; it must have write access to `auth_store`. |
 | `PORT` | no | Host port for `docker compose` only. Default `8000`. |
-| `BIND_ADDR` | no | Host interface the `docker compose` port is published on. Default `0.0.0.0` (all interfaces). Compose only; does not change the address the app listens on inside the container. |
+| `BIND_ADDR` | no | Host interface the `docker compose` port is published on. Default unset: all interfaces (IPv4 and IPv6), same as before. Compose only; does not change the address the app listens on inside the container. |
 | `IMAGE_TAG` | no | Local image tag for `docker compose` only. Default `latest`. |
 
 ## Run locally
@@ -118,7 +118,7 @@ volume.
 
 `BIND_ADDR` sets the host interface the published port is bound to. It does not
 change the address the app listens on inside the container. Unset (or empty), the
-port is published on all interfaces, as before. Set it to a specific LAN address
+port is published on all interfaces (IPv4 and IPv6), exactly as before. Set it to a specific LAN address
 (for example `192.0.2.10`) to allow LAN-only access to the host port. Set it to
 `127.0.0.1` when a TLS reverse proxy or tunnel runs on the same host and reaches
 the container through the host port on loopback. A loopback bind breaks any proxy
