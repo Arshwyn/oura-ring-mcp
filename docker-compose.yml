@@ -12,7 +12,7 @@ services:
     security_opt:
       - no-new-privileges:true
     ports:
-      - "${PORT:-8000}:8000"
+      - "${BIND_ADDR:-0.0.0.0}:${PORT:-8000}:8000"
     environment:
       BASE_URL: ${BASE_URL}
       CLIENT_ID: ${CLIENT_ID}
