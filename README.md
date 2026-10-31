@@ -107,6 +107,9 @@ The base image is pinned to `python:3.11.18-slim-trixie` in the `Dockerfile`, an
 the `uv` image to `ghcr.io/astral-sh/uv:0.13.6`. Bumping either is a deliberate
 edit of the corresponding line followed by a rebuild.
 
+The runtime image does not include `setuptools` or `wheel`; they are removed
+after the dependencies are installed.
+
 ## Connect Claude
 
 In Claude, add a custom connector:
