@@ -84,6 +84,7 @@ Copy `.env.example` to `.env` and fill it in.
 | `SUPABASE_URL` | yes | Supabase project URL. |
 | `SUPABASE_KEY` | yes | Supabase key. A privileged secret; it must have write access to `auth_store`. |
 | `PORT` | no | Host port for `docker compose` only. Default `8000`. |
+| `IMAGE_TAG` | no | Local image tag for `docker compose` only. Default `latest`. |
 
 ## Run locally
 
@@ -101,6 +102,10 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 cp .env.example .env   # then edit
 docker compose up --build
 ```
+
+The base image is pinned to `python:3.11.18-slim-trixie` in the `Dockerfile`, and
+the `uv` image to `ghcr.io/astral-sh/uv:0.13.6`. Bumping either is a deliberate
+edit of the corresponding line followed by a rebuild.
 
 ## Connect Claude
 
