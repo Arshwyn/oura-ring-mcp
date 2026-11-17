@@ -17,6 +17,7 @@ from starlette.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from datetime import datetime, timezone
 from connector_tokens import ConnectorTokenStore
+from oauth_token import NO_STORE_HEADERS, client_authenticated, handle_refresh_grant, token_response
 
 # --- CONFIGURATION ---
 
@@ -357,7 +358,7 @@ async def oauth_metadata(request: Request):
         "token_endpoint": f"{BASE_URL}/oauth/token",
         "scopes_supported": ["oura_mcp"],
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
         "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
         "code_challenge_methods_supported": ["S256"],
     })
@@ -448,33 +449,41 @@ async def oauth_token(request: Request):
     client_id = basic_client_id or form.get("client_id")
     client_secret = basic_client_secret if basic_client_id else form.get("client_secret")
 
+    def respond(body, status_code=200):
+        return JSONResponse(body, status_code=status_code, headers=NO_STORE_HEADERS)
+
+    if grant_type == "refresh_token":
+        # Store writes do network I/O; keep them off the event loop.
+        status, body, reason = await asyncio.to_thread(
+            handle_refresh_grant, CONNECTOR_STORE, MCP_CLIENT_ID, MCP_CLIENT_SECRET,
+            client_id, client_secret, form.get("refresh_token"),
+        )
+        if status != 200:
+            print(f"/oauth/token rejected: {reason} (refresh_token) for client_id={client_id}")
+        return respond(body, status)
+
     if grant_type != "authorization_code":
         print(f"/oauth/token rejected: unsupported grant_type={grant_type}")
-        return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
+        return respond({"error": "unsupported_grant_type"}, 400)
 
-    if client_id != MCP_CLIENT_ID or not client_secret or not hmac.compare_digest(str(client_secret), MCP_CLIENT_SECRET):
+    if not client_authenticated(client_id, client_secret, MCP_CLIENT_ID, MCP_CLIENT_SECRET):
         print(f"/oauth/token rejected: invalid_client for client_id={client_id}")
-        return JSONResponse({"error": "invalid_client"}, status_code=401)
+        return respond({"error": "invalid_client"}, 401)
 
     auth_code = AUTH_CODES.get(code)
     if not auth_code or auth_code["expires_at"] < time.time() or auth_code["redirect_uri"] != redirect_uri:
         print(f"/oauth/token rejected: invalid_grant for client_id={client_id} (missing/expired/reused code or redirect_uri mismatch)")
-        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+        return respond({"error": "invalid_grant"}, 400)
     del AUTH_CODES[code]
 
     if auth_code["code_challenge"]:
         if not code_verifier or not _verify_pkce(code_verifier, auth_code["code_challenge"]):
             print(f"/oauth/token rejected: PKCE verification failed for client_id={client_id}")
-            return JSONResponse({"error": "invalid_grant"}, status_code=400)
+            return respond({"error": "invalid_grant"}, 400)
 
     # Store writes do network I/O; keep them off the event loop.
     issued = await asyncio.to_thread(CONNECTOR_STORE.issue, MCP_CLIENT_ID)
-    return JSONResponse({
-        "access_token": issued["access_token"],
-        "token_type": "Bearer",
-        "expires_in": issued["expires_in"],
-        "refresh_token": issued["refresh_token"],
-    })
+    return respond(token_response(issued))
 
 # Kept off the bare origin ("/") on purpose -- that path is now the MCP
 # Streamable HTTP endpoint itself (GET/POST/DELETE, bearer-token gated).
