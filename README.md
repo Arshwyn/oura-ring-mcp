@@ -32,8 +32,10 @@ Only the OAuth flow is supported; Oura Personal Access Tokens are not.
 
 ## Supabase setup
 
-Tokens are stored in a single table, `auth_store`. Run this in the Supabase
-SQL editor:
+Tokens are stored in a single table, `auth_store`. It holds one row for the
+Oura tokens and one row (`oura_connector_tokens`) for the hashed connector
+tokens described under [Connector tokens and persistence](#connector-tokens-and-persistence);
+no extra SQL is needed for the second row. Run this in the Supabase SQL editor:
 
 ```sql
 create table if not exists auth_store (
@@ -143,6 +145,50 @@ In Claude, add a custom connector:
 2. `<BASE_URL>/healthz` returns a liveness response; point an uptime monitor
    at it.
 
+## Connector tokens and persistence
+
+The token endpoint (`POST /oauth/token`) supports the `authorization_code` and
+`refresh_token` grants, both advertised in the discovery metadata. A code
+exchange returns an access token (valid 1 hour) and a refresh token (valid 90
+days). Presenting the refresh token with the same client credentials returns a
+new access token and a new refresh token; the old refresh token stops working
+(rotation) and the 90-day lifetime restarts on every refresh. Reusing an
+already-rotated refresh token is rejected and ends that session. A refresh
+token only works for the client it was issued to. Errors are `invalid_client`,
+`invalid_request`, `invalid_grant` and `unsupported_grant_type`, and token
+responses are sent with `Cache-Control: no-store`. A connector that supports
+refresh therefore stays signed in without manual reconnects.
+
+Only SHA-256 hashes of access and refresh tokens are stored, in the
+`oura_connector_tokens` row of the existing `auth_store` table, so restarts and
+redeploys keep sessions. Raw tokens are never stored or logged. The state is
+read once at startup; token checks use memory. Authorization codes stay in
+memory (5 minutes). If Supabase cannot be read or written, the server logs a
+warning and keeps working with in-memory tokens, so a restart then requires
+reconnecting. A stored value that cannot be parsed is left untouched.
+
+Why Supabase and not a file: the container has a read-only root filesystem and
+no volume, and Supabase is already required, so reusing `auth_store` needs no
+new volume, table or setting.
+
+To sign every connector session out, delete that row and restart the container:
+
+```sql
+delete from auth_store where mcp_name = 'oura_connector_tokens';
+```
+
+Rotating `MCP_CLIENT_SECRET` also blocks all refreshes; existing access tokens
+then lapse within an hour.
+
+## Tests
+
+```sh
+uv run --group dev pytest
+```
+
+The tests cover the token store, the token endpoint, and a no-network app
+smoke check (401 challenge, tool list, code and refresh flow).
+
 ## Security notes
 
 - Never commit `.env`.
@@ -150,5 +196,5 @@ In Claude, add a custom connector:
   capabilities, and `no-new-privileges`.
 - `MCP_CLIENT_SECRET` is the only access credential for the MCP endpoint.
   Keep it secret and rotate it if exposed.
-- MCP access tokens are held in memory, so after a restart the connector must
-  reconnect.
+- Connector access and refresh tokens are stored only as SHA-256 hashes and
+  survive restarts; see "Connector tokens and persistence".
