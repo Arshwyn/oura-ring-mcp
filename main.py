@@ -317,7 +317,13 @@ LOGIN_FORM = """<!doctype html>
 <button type="submit">Continue</button>
 </form></body></html>"""
 
-NO_STORE = {"Cache-Control": "no-store"}
+NO_STORE = {
+    "Cache-Control": "no-store",
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
 
 @mcp.custom_route("/auth/login", methods=["GET", "POST"])
 async def login(request: Request):
