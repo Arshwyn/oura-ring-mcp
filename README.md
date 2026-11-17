@@ -6,8 +6,9 @@ activity, SpO2, stress, and more) as tools for Claude.
 There are two separate OAuth layers:
 
 1. **Oura OAuth** (`/auth/login`, `/auth/callback`): authorizes this server to
-   call the Oura API on your behalf. Tokens are stored in Supabase and
-   refreshed automatically.
+   call the Oura API on your behalf. Starting the link requires your
+   `MCP_CLIENT_SECRET`, and the callback is protected by a single-use `state`.
+   Tokens are stored in Supabase and refreshed automatically.
 2. **Claude connector OAuth** (`/oauth/*`): protects this MCP server itself.
    Claude authenticates at the token endpoint with a pre-shared client ID and
    secret (`MCP_CLIENT_ID` / `MCP_CLIENT_SECRET`) and then uses the issued
@@ -142,9 +143,9 @@ In Claude, add a custom connector:
 
 ## First run
 
-1. Open `<BASE_URL>/auth/login` once in a browser and approve access to link
-   your Oura account. Then restrict `/auth/*` as described under
-   [Security notes](#security-notes).
+1. Open `<BASE_URL>/auth/login` in a browser, enter your `MCP_CLIENT_SECRET`
+   in the form, and approve access at Oura to link your Oura account. Repeat
+   this whenever you need to re-link.
 2. `<BASE_URL>/healthz` returns a liveness response; point an uptime monitor
    at it.
 
@@ -203,9 +204,16 @@ smoke check (401 challenge, tool list, code and refresh flow).
   credentials for the MCP endpoint. Keep the secret private and rotate it if
   exposed; rotation blocks new sign-ins and refreshes, and existing access
   tokens lapse within an hour.
-- `/auth/login` and `/auth/callback` are not authenticated and carry no
-  `state` check. Restrict `/auth/*` at the reverse proxy or tunnel (for example
-  with an access policy or an IP allowlist), or block it once your Oura account
-  is linked.
+- `/auth/login` shows a form and only starts the Oura link when the posted
+  `MCP_CLIENT_SECRET` matches (constant-time comparison, short delay on a wrong
+  value, the form body is never logged). It then issues a random, single-use
+  `state` valid for about 10 minutes and binds it to the browser with an
+  HttpOnly, Secure, SameSite=Lax cookie. `/auth/callback` accepts the response
+  only when the cookie and the `state` parameter match an unexpired, unused
+  value, and rejects anything else with a 400 before exchanging the code. Why:
+  the state alone ties a callback to the browser that started it, and the
+  secret ensures only the owner can start a link that replaces the stored Oura
+  tokens. Pending states are in memory, so a restart during linking just means
+  starting again. Serve the server over HTTPS (the cookie is Secure).
 - Connector access and refresh tokens are stored only as SHA-256 hashes and
   survive restarts; see "Connector tokens and persistence".
