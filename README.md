@@ -174,7 +174,8 @@ Why Supabase and not a file: the container has a read-only root filesystem and
 no volume, and Supabase is already required, so reusing `auth_store` needs no
 new volume, table or setting.
 
-To sign every connector session out, delete that row and restart the container:
+To sign every connector session out, stop the container first (a running
+container rewrites the row), delete that row, then start the container again:
 
 ```sql
 delete from auth_store where mcp_name = 'oura_connector_tokens';
