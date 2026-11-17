@@ -170,15 +170,119 @@ def test_callback_expired_rejected(main_module, monkeypatch, exchanges):
     assert exchanges == []
 
 
-def test_link_flow_responses_carry_security_headers(client):
-    responses = [
-        client.get("/auth/login"),
-        client.post("/auth/login", data={"secret": "wrong"}),
-        client.get("/auth/callback", params={"code": "c", "state": "nope"}),
-    ]
-    for r in responses:
-        assert r.headers["x-frame-options"] == "DENY"
-        assert r.headers["content-security-policy"] == "frame-ancestors 'none'"
-        assert r.headers["x-content-type-options"] == "nosniff"
-        assert r.headers["referrer-policy"] == "no-referrer"
-        assert r.headers["cache-control"] == "no-store"
+REQUIRED_HEADERS = {
+    "x-frame-options": "DENY",
+    "content-security-policy": "frame-ancestors 'none'",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "cache-control": "no-store",
+}
+
+
+def _form(client):
+    return client.get("/auth/login")
+
+
+def _wrong_secret(client):
+    return client.post("/auth/login", data={"secret": "wrong"})
+
+
+def _malformed_form(client):
+    return client.post(
+        "/auth/login", content=b"x", headers={"content-type": "multipart/form-data"}
+    )
+
+
+def _good_login(client):
+    return client.post("/auth/login", data={"secret": "test-secret"})
+
+
+def _bad_state(client):
+    return client.get("/auth/callback", params={"code": "c", "state": "nope"})
+
+
+def _no_code(client):
+    _, state = start_flow(client)
+    return client.get("/auth/callback", params={"state": state})
+
+
+def _success(client):
+    _, state = start_flow(client)
+    return client.get("/auth/callback", params={"code": "c", "state": state})
+
+
+def _exchange_failure(client):
+    _, state = start_flow(client)
+    return client.get("/auth/callback", params={"code": "c", "state": state})
+
+
+def _exception(client):
+    _, state = start_flow(client)
+    return client.get("/auth/callback", params={"code": "c", "state": state})
+
+
+@pytest.mark.parametrize("outcome,status", [
+    (_form, 200),
+    (_wrong_secret, 403),
+    (_malformed_form, 400),
+    (_good_login, 303),
+    (_bad_state, 400),
+    (_no_code, 400),
+    (_success, 200),
+    (_exchange_failure, 400),
+    (_exception, 500),
+])
+def test_every_link_flow_response_carries_security_headers(
+    client, main_module, monkeypatch, outcome, status
+):
+    if outcome is _exchange_failure:
+        class Bad:
+            status_code = 400
+            text = "upstream error"
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, *a, **k):
+                return Bad()
+
+        monkeypatch.setattr(main_module.httpx, "AsyncClient", lambda *a, **k: FakeClient())
+    elif outcome is _exception:
+        class Boom:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, *a, **k):
+                raise RuntimeError("boom")
+
+        monkeypatch.setattr(main_module.httpx, "AsyncClient", lambda *a, **k: Boom())
+    elif outcome is _success:
+        class Ok:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {"access_token": "a", "refresh_token": "r"}
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, *a, **k):
+                return Ok()
+
+        monkeypatch.setattr(main_module.httpx, "AsyncClient", lambda *a, **k: FakeClient())
+    r = outcome(client)
+    assert r.status_code == status
+    for name, value in REQUIRED_HEADERS.items():
+        assert r.headers[name] == value, name
