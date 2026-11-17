@@ -329,7 +329,10 @@ NO_STORE = {
 async def login(request: Request):
     if request.method == "GET":
         return HTMLResponse(LOGIN_FORM, headers=NO_STORE)
-    form = await request.form()
+    try:
+        form = await request.form()
+    except Exception:
+        return HTMLResponse("Invalid request.", status_code=400, headers=NO_STORE)
     supplied = form.get("secret")
     if not isinstance(supplied, str) or not secret_matches(supplied, MCP_CLIENT_SECRET):
         await asyncio.sleep(WRONG_SECRET_DELAY_SECONDS)
@@ -363,7 +366,7 @@ async def callback(request: Request) -> JSONResponse:
         return response
     code = request.query_params.get("code")
     if not code:
-        return JSONResponse({"error": "No code received"}, status_code=400)
+        return JSONResponse({"error": "No code received"}, status_code=400, headers=NO_STORE)
 
     async with httpx.AsyncClient() as client:
         try:
@@ -378,13 +381,13 @@ async def callback(request: Request) -> JSONResponse:
             if resp.status_code != 200:
                 return JSONResponse(
                     {"error": f"Token exchange failed ({resp.status_code})", "detail": resp.text},
-                    status_code=resp.status_code
+                    status_code=resp.status_code, headers=NO_STORE
                 )
             tokens = resp.json()
             save_tokens(tokens)
-            return JSONResponse({"message": "Login Successful!"})
+            return JSONResponse({"message": "Login Successful!"}, headers=NO_STORE)
         except Exception as e:
-            return JSONResponse({"error": f"Auth failed: {str(e)}"}, status_code=500)
+            return JSONResponse({"error": f"Auth failed: {str(e)}"}, status_code=500, headers=NO_STORE)
 
 # --- CLAUDE CONNECTOR OAUTH ROUTES ---
 # Real OAuth 2.1 + PKCE for the Claude-connector-facing flow. Dynamic client
