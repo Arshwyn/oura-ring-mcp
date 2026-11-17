@@ -168,3 +168,17 @@ def test_callback_expired_rejected(main_module, monkeypatch, exchanges):
         clock.now = 11
         assert c.get("/auth/callback", params={"code": "c", "state": state}).status_code == 400
     assert exchanges == []
+
+
+def test_link_flow_responses_carry_security_headers(client):
+    responses = [
+        client.get("/auth/login"),
+        client.post("/auth/login", data={"secret": "wrong"}),
+        client.get("/auth/callback", params={"code": "c", "state": "nope"}),
+    ]
+    for r in responses:
+        assert r.headers["x-frame-options"] == "DENY"
+        assert r.headers["content-security-policy"] == "frame-ancestors 'none'"
+        assert r.headers["x-content-type-options"] == "nosniff"
+        assert r.headers["referrer-policy"] == "no-referrer"
+        assert r.headers["cache-control"] == "no-store"
