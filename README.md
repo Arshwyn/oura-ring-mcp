@@ -9,9 +9,9 @@ There are two separate OAuth layers:
    call the Oura API on your behalf. Tokens are stored in Supabase and
    refreshed automatically.
 2. **Claude connector OAuth** (`/oauth/*`): protects this MCP server itself.
-   Claude authenticates with a pre-shared client ID and secret
-   (`MCP_CLIENT_ID` / `MCP_CLIENT_SECRET`). Dynamic client registration is
-   disabled.
+   Claude authenticates at the token endpoint with a pre-shared client ID and
+   secret (`MCP_CLIENT_ID` / `MCP_CLIENT_SECRET`) and then uses the issued
+   bearer tokens. Dynamic client registration is disabled.
 
 ## Prerequisites
 
@@ -196,7 +196,10 @@ smoke check (401 challenge, tool list, code and refresh flow).
 - Never commit `.env`.
 - The container is hardened: non-root user, read-only root filesystem, no
   capabilities, and `no-new-privileges`.
-- `MCP_CLIENT_SECRET` is the only access credential for the MCP endpoint.
-  Keep it secret and rotate it if exposed.
+- `MCP_CLIENT_SECRET` authenticates the connector client at `/oauth/token`
+  (code exchange and refresh). Issued access and refresh tokens are also bearer
+  credentials for the MCP endpoint. Keep the secret private and rotate it if
+  exposed; rotation blocks new sign-ins and refreshes, and existing access
+  tokens lapse within an hour.
 - Connector access and refresh tokens are stored only as SHA-256 hashes and
   survive restarts; see "Connector tokens and persistence".
