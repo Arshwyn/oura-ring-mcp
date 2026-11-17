@@ -8,6 +8,7 @@ import base64
 import hmac
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, JSONResponse
+from starlette.routing import Route
 from urllib.parse import urlencode
 from fastmcp import FastMCP
 from fastmcp.server.auth import TokenVerifier, AccessToken
@@ -184,6 +185,18 @@ async def make_oura_request(endpoint: str, params: dict = None):
 
 # --- CLAUDE CONNECTOR AUTH (bearer-token verification for the MCP transport) ---
 
+async def resource_metadata(request: Request):
+    # Must exactly match the connector's configured "Remote MCP server URL",
+    # including path -- an Anthropic-specific requirement, not just an
+    # MCP-spec nicety. If the connector ends up configured with anything
+    # other than the bare BASE_URL (e.g. a trailing slash), this needs to
+    # be updated to match the real, user-confirmed value.
+    return JSONResponse({
+        "resource": BASE_URL,
+        "authorization_servers": [BASE_URL],
+    })
+
+
 class BearerTokenVerifier(TokenVerifier):
     """Verifies access tokens issued by /oauth/token against ACCESS_TOKENS.
 
@@ -198,6 +211,12 @@ class BearerTokenVerifier(TokenVerifier):
         if not entry or entry["expires_at"] < time.time():
             return None
         return AccessToken(token=token, client_id=MCP_CLIENT_ID, scopes=[])
+
+    def get_routes(self, mcp_path=None):
+        # Served here (not via custom_route) so the 401 challenge advertises
+        # the metadata URL: FastMCP only does so for routes the auth provider
+        # itself contributes.
+        return [Route("/.well-known/oauth-protected-resource", resource_metadata, methods=["GET"])]
 
 
 mcp = FastMCP("oura-cloud", auth=BearerTokenVerifier(base_url=BASE_URL))
@@ -320,18 +339,6 @@ async def oauth_metadata(request: Request):
         "grant_types_supported": ["authorization_code"],
         "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
         "code_challenge_methods_supported": ["S256"],
-    })
-
-@mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
-async def resource_metadata(request: Request):
-    # Must exactly match the connector's configured "Remote MCP server URL",
-    # including path -- an Anthropic-specific requirement, not just an
-    # MCP-spec nicety. If the connector ends up configured with anything
-    # other than the bare BASE_URL (e.g. a trailing slash), this needs to
-    # be updated to match the real, user-confirmed value.
-    return JSONResponse({
-        "resource": BASE_URL,
-        "authorization_servers": [BASE_URL],
     })
 
 @mcp.custom_route("/oauth/register", methods=["POST"])
