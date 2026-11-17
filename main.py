@@ -8,7 +8,7 @@ import hashlib
 import base64
 import hmac
 from starlette.requests import Request
-from starlette.responses import RedirectResponse, JSONResponse
+from starlette.responses import RedirectResponse, JSONResponse, HTMLResponse
 from starlette.routing import Route
 from urllib.parse import urlencode
 from fastmcp import FastMCP
@@ -17,6 +17,7 @@ from starlette.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from datetime import datetime, timezone
 from connector_tokens import ConnectorTokenStore
+from auth_link import COOKIE_NAME, STATE_TTL_SECONDS, WRONG_SECRET_DELAY_SECONDS, LinkStateStore, secret_matches
 from oauth_token import NO_STORE_HEADERS, client_authenticated, handle_refresh_grant, token_response
 
 # --- CONFIGURATION ---
@@ -307,18 +308,53 @@ async def get_enhanced_tags(start_date: str, end_date: str) -> str:
 
 # --- SERVER & OURA AUTH ROUTES ---
 
-@mcp.custom_route("/auth/login", methods=["GET"])
-async def login(request: Request) -> RedirectResponse:
+LINK_STATES = LinkStateStore()
+
+LOGIN_FORM = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Link Oura</title></head>
+<body><form method="post" action="/auth/login">
+<label>Connector secret <input type="password" name="secret" autocomplete="current-password" autofocus></label>
+<button type="submit">Continue</button>
+</form></body></html>"""
+
+NO_STORE = {"Cache-Control": "no-store"}
+
+@mcp.custom_route("/auth/login", methods=["GET", "POST"])
+async def login(request: Request):
+    if request.method == "GET":
+        return HTMLResponse(LOGIN_FORM, headers=NO_STORE)
+    form = await request.form()
+    supplied = form.get("secret")
+    if not isinstance(supplied, str) or not secret_matches(supplied, MCP_CLIENT_SECRET):
+        await asyncio.sleep(WRONG_SECRET_DELAY_SECONDS)
+        return HTMLResponse("Invalid secret.", status_code=403, headers=NO_STORE)
+    state = LINK_STATES.issue()
     params = urlencode({
         "response_type": "code",
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "scope": "email personal daily heartrate workout enhanced_tag session spo2Daily",
+        "state": state,
     })
-    return RedirectResponse(f"{OURA_AUTH_URL}?{params}")
+    response = RedirectResponse(f"{OURA_AUTH_URL}?{params}", status_code=303, headers=NO_STORE)
+    response.set_cookie(
+        COOKIE_NAME, state, max_age=STATE_TTL_SECONDS, path="/auth",
+        httponly=True, secure=True, samesite="lax",
+    )
+    return response
 
 @mcp.custom_route("/auth/callback", methods=["GET"])
 async def callback(request: Request) -> JSONResponse:
+    valid = LINK_STATES.consume(
+        request.query_params.get("state"), request.cookies.get(COOKIE_NAME)
+    )
+    if not valid:
+        response = JSONResponse(
+            {"error": "Invalid or expired link state. Start again at /auth/login."},
+            status_code=400, headers=NO_STORE,
+        )
+        response.delete_cookie(COOKIE_NAME, path="/auth")
+        return response
     code = request.query_params.get("code")
     if not code:
         return JSONResponse({"error": "No code received"}, status_code=400)
