@@ -1,4 +1,5 @@
 import os
+import asyncio
 import json
 import httpx
 import time
@@ -15,6 +16,7 @@ from fastmcp.server.auth import TokenVerifier, AccessToken
 from starlette.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from datetime import datetime, timezone
+from connector_tokens import ConnectorTokenStore
 
 # --- CONFIGURATION ---
 
@@ -56,12 +58,14 @@ MCP_CLIENT_SECRET = os.getenv("MCP_CLIENT_SECRET")
 MCP_REDIRECT_URI = os.getenv("MCP_REDIRECT_URI", "https://claude.ai/api/mcp/auth_callback")
 
 AUTH_CODE_TTL_SECONDS = 5 * 60
-ACCESS_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60  # 7 days -- bounded, not a static year-long token
 
-# In-memory by design: this is a personal, single-tenant, restart-tolerant
-# service. Losing codes/tokens on restart just means re-authorizing.
+# Authorization codes are short-lived and stay in memory. Connector access and
+# refresh tokens (hashes only) are persisted -- see CONNECTOR_STORE below.
 AUTH_CODES = {}
-ACCESS_TOKENS = {}
+
+# Row in auth_store (same table as the Oura tokens) holding the hashed
+# connector token state.
+CONNECTOR_TOKENS_ROW = "oura_connector_tokens"
 
 
 def save_tokens(tokens):
@@ -85,6 +89,24 @@ def load_tokens():
     except Exception as e:
         print(f"Error loading tokens from Supabase: {e}")
         return None
+
+def load_connector_state():
+    """Return the stored connector token state, or None when no row exists yet."""
+    response = supabase.table("auth_store").select("tokens").eq("mcp_name", CONNECTOR_TOKENS_ROW).execute()
+    if response.data and len(response.data) > 0:
+        return response.data[0].get("tokens")
+    return None
+
+def save_connector_state(state):
+    supabase.table("auth_store").upsert({
+        "mcp_name": CONNECTOR_TOKENS_ROW,
+        "tokens": state,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).execute()
+
+# Failures to load or save never raise: the store logs a warning (no token
+# values) and keeps working in memory.
+CONNECTOR_STORE = ConnectorTokenStore(load=load_connector_state, save=save_connector_state)
 
 LOG_FIELD_CAP = 200
 
@@ -198,7 +220,7 @@ async def resource_metadata(request: Request):
 
 
 class BearerTokenVerifier(TokenVerifier):
-    """Verifies access tokens issued by /oauth/token against ACCESS_TOKENS.
+    """Verifies access tokens issued by /oauth/token against CONNECTOR_STORE.
 
     Wired into FastMCP's `auth=` below, this makes FastMCP wrap the MCP
     transport endpoint (every tool call and the transport itself) in a real
@@ -207,8 +229,7 @@ class BearerTokenVerifier(TokenVerifier):
     """
 
     async def verify_token(self, token: str):
-        entry = ACCESS_TOKENS.get(token)
-        if not entry or entry["expires_at"] < time.time():
+        if CONNECTOR_STORE.lookup_access(token) is None:
             return None
         return AccessToken(token=token, client_id=MCP_CLIENT_ID, scopes=[])
 
@@ -446,13 +467,13 @@ async def oauth_token(request: Request):
             print(f"/oauth/token rejected: PKCE verification failed for client_id={client_id}")
             return JSONResponse({"error": "invalid_grant"}, status_code=400)
 
-    access_token = secrets.token_hex(32)
-    ACCESS_TOKENS[access_token] = {"expires_at": time.time() + ACCESS_TOKEN_TTL_SECONDS}
-
+    # Store writes do network I/O; keep them off the event loop.
+    issued = await asyncio.to_thread(CONNECTOR_STORE.issue, MCP_CLIENT_ID)
     return JSONResponse({
-        "access_token": access_token,
+        "access_token": issued["access_token"],
         "token_type": "Bearer",
-        "expires_in": ACCESS_TOKEN_TTL_SECONDS,
+        "expires_in": issued["expires_in"],
+        "refresh_token": issued["refresh_token"],
     })
 
 # Kept off the bare origin ("/") on purpose -- that path is now the MCP

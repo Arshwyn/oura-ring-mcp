@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Copy files
 COPY pyproject.toml .
-COPY main.py .
+COPY main.py connector_tokens.py ./
 
 # Install dependencies, then drop the base image's build tooling (not needed at runtime)
 RUN uv pip install --system -r pyproject.toml \
