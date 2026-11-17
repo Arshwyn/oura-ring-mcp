@@ -121,11 +121,12 @@ class ConnectorTokenStore:
         """Return the client id for a valid access token, else None (memory only)."""
         if not isinstance(token, str) or not token:
             return None
-        with self._lock:
-            e = self._access.get(hash_token(token))
-            if not e or e["expires_at"] <= self._now():
-                return None
-            return e["client_id"]
+        # Lock-free on purpose: a single dict read is atomic, and this runs on
+        # the event loop while a save (network I/O) may hold the lock.
+        e = self._access.get(hash_token(token))
+        if not e or e["expires_at"] <= self._now():
+            return None
+        return e["client_id"]
 
     def refresh(self, token, client_id):
         """Rotate a refresh token. Returns a new pair or {"error": "invalid_grant"}."""
