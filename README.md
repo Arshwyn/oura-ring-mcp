@@ -57,8 +57,10 @@ create any policies: with RLS enabled and no policies, only the service-role
 (secret) key used by the server can access the table, and the `anon` and
 `authenticated` roles are denied.
 
-`SUPABASE_KEY` must be the service-role (secret) key. Keep it server-side and
-never use the anon/publishable key or expose it to clients.
+`SUPABASE_KEY` must be the project's secret key (`sb_secret_...`) or the legacy
+`service_role` key. Keep it server-side and never use the anon/publishable key
+or expose it to clients. If it is ever exposed, rotate it in the Supabase
+dashboard and update `.env`.
 
 How to verify: after running the SQL, the table shows RLS enabled in the
 Supabase dashboard (Table Editor, or Authentication > Policies). The Supabase
@@ -84,7 +86,7 @@ Copy `.env.example` to `.env` and fill it in.
 | `MCP_CLIENT_SECRET` | yes | Client secret you enter in Claude. Generate with `openssl rand -hex 32`. |
 | `MCP_REDIRECT_URI` | no | Claude's OAuth callback. Default `https://claude.ai/api/mcp/auth_callback`. |
 | `SUPABASE_URL` | yes | Supabase project URL. |
-| `SUPABASE_KEY` | yes | Supabase key. A privileged secret; it must have write access to `auth_store`. |
+| `SUPABASE_KEY` | yes | Supabase secret key (`sb_secret_...`) or the legacy `service_role` key. Server-side only; never the anon or publishable key. Rotate it if exposed. |
 | `PORT` | no | Host port for `docker compose` only. Default `8000`. |
 | `BIND_ADDR` | no | Host interface the `docker compose` port is published on. Default unset: all interfaces (IPv4 and IPv6), same as before. Compose only; does not change the address the app listens on inside the container. |
 | `IMAGE_TAG` | no | Local image tag for `docker compose` only. Default `latest`. |
