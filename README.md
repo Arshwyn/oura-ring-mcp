@@ -143,7 +143,8 @@ In Claude, add a custom connector:
 ## First run
 
 1. Open `<BASE_URL>/auth/login` once in a browser and approve access to link
-   your Oura account.
+   your Oura account. Then restrict `/auth/*` as described under
+   [Security notes](#security-notes).
 2. `<BASE_URL>/healthz` returns a liveness response; point an uptime monitor
    at it.
 
@@ -201,5 +202,9 @@ smoke check (401 challenge, tool list, code and refresh flow).
   credentials for the MCP endpoint. Keep the secret private and rotate it if
   exposed; rotation blocks new sign-ins and refreshes, and existing access
   tokens lapse within an hour.
+- `/auth/login` and `/auth/callback` are not authenticated and carry no
+  `state` check. Restrict `/auth/*` at the reverse proxy or tunnel (for example
+  with an access policy or an IP allowlist), or block it once your Oura account
+  is linked.
 - Connector access and refresh tokens are stored only as SHA-256 hashes and
   survive restarts; see "Connector tokens and persistence".
