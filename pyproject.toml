@@ -29,3 +29,12 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "requests>=2.33.0"
 ]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
